@@ -12,6 +12,8 @@
         android:label="phone_dialer"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <receiver android:name=".CallActionReceiver" android:exported="false" />
+        
         <service android:name=".CallService"
                  android:permission="android.permission.BIND_INCALL_SERVICE"
                  android:exported="true">

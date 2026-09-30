@@ -24,8 +24,9 @@ class CallService : InCallService() {
         override fun onStateChanged(call: Call, state: Int) {
             super.onStateChanged(call, state)
             val number = call.details?.handle?.schemeSpecificPart ?: "Unknown"
+            val name = ContactUtils.getContactName(this@CallService, number) ?: number
             val isIncoming = state == Call.STATE_RINGING
-            val event = mapOf("number" to number, "isIncoming" to isIncoming, "state" to state)
+            val event = mapOf("number" to number, "name" to name, "isIncoming" to isIncoming, "state" to state)
             
             // Send on UI thread
             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -41,14 +42,17 @@ class CallService : InCallService() {
         call.registerCallback(callCallback)
         
         val number = call.details?.handle?.schemeSpecificPart ?: "Unknown"
+        val name = ContactUtils.getContactName(this, number) ?: number
         val isIncoming = call.state == Call.STATE_RINGING
         
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            MainActivity.callEventSink?.success(mapOf("number" to number, "isIncoming" to isIncoming, "state" to call.state))
+            MainActivity.callEventSink?.success(mapOf("number" to number, "name" to name, "isIncoming" to isIncoming, "state" to call.state, "initial" to true))
         }
 
         if (isIncoming) {
-            showIncomingCallNotification(number)
+            if (!MainActivity.isAppInForeground) {
+                showIncomingCallNotification(name)
+            }
         } else {
             // Outgoing call, just open UI
             val intent = Intent(this, MainActivity::class.java)
@@ -73,8 +77,10 @@ class CallService : InCallService() {
     }
 
     private fun showIncomingCallNotification(number: String) {
-        val intent = Intent(this, MainActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "full_screen")
+        }
         
         val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -84,17 +90,31 @@ class CallService : InCallService() {
         
         val fullScreenIntent = PendingIntent.getActivity(this, 0, intent, pendingIntentFlags)
 
+        val answerIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("action", "answered")
+        }
+        val answerPendingIntent = PendingIntent.getActivity(this, 1, answerIntent, pendingIntentFlags)
+
+        val declineIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = "DECLINE_CALL"
+        }
+        val declinePendingIntent = PendingIntent.getBroadcast(this, 2, declineIntent, pendingIntentFlags)
+
         createNotificationChannel()
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_dialer)
-            .setContentTitle("Incoming Call")
-            .setContentText(number)
+            .setContentTitle(number)
+            .setContentText("Incoming Call")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setFullScreenIntent(fullScreenIntent, true)
+            .setContentIntent(fullScreenIntent)
             .setOngoing(true)
             .setAutoCancel(false)
+            .addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent)
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, builder.build())

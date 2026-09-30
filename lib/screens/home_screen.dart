@@ -20,6 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _showIncomingCallBanner = false;
   String _incomingNumber = '';
+  bool _isCallScreenActive = false;
 
   @override
   void initState() {
@@ -34,31 +35,53 @@ class _HomeScreenState extends State<HomeScreen> {
         final state = event['state'] as int?;
         final isIncoming = event['isIncoming'] as bool? ?? false;
         final number = event['number'] as String? ?? 'Unknown';
+        final name = event['name'] as String? ?? number;
 
         // 2 == STATE_RINGING
         if (state == 2 && isIncoming) {
           final isLocked = await platform.invokeMethod<bool>('isDeviceLocked') ?? false;
+          final isInitial = event['initial'] as bool? ?? false;
+          final forceFullScreen = event['forceFullScreen'] as bool? ?? false;
           
-          if (isLocked) {
-            if (mounted) {
+          if (isLocked || isInitial || forceFullScreen) {
+            if (mounted && !_isCallScreenActive) {
+              _isCallScreenActive = true;
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => CallScreen(
-                    displayName: number,
+                    displayName: name,
                     number: number,
                     isIncoming: true,
+                    isLocked: isLocked,
                   ),
                 ),
-              );
+              ).then((_) {
+                _isCallScreenActive = false;
+              });
             }
           } else {
             if (mounted) {
               setState(() {
                 _showIncomingCallBanner = true;
-                _incomingNumber = number;
+                _incomingNumber = name;
               });
             }
+          }
+        } else if (state == 4) { // STATE_ACTIVE (Answered)
+          final forceFullScreen = event['forceFullScreen'] as bool? ?? false;
+          if (forceFullScreen && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CallScreen(
+                  displayName: name,
+                  number: number,
+                  isIncoming: false, 
+                  isAnswered: true, // Mark as already answered!
+                ),
+              ),
+            );
           }
         } else if (state == 7) { // STATE_DISCONNECTED
           if (mounted) {

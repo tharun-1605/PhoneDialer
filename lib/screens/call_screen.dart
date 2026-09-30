@@ -9,6 +9,8 @@ class CallScreen extends StatefulWidget {
   final String displayName;
   final String number;
   final bool isIncoming;
+  final bool isAnswered;
+  final bool isLocked;
   final Uint8List? photoThumbnail;
 
   const CallScreen({
@@ -16,6 +18,8 @@ class CallScreen extends StatefulWidget {
     required this.displayName,
     required this.number,
     this.isIncoming = false,
+    this.isAnswered = false,
+    this.isLocked = false,
     this.photoThumbnail,
   }) : super(key: key);
 
@@ -38,26 +42,17 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
-    _callStatus = widget.isIncoming ? 'incoming call' : 'calling...';
-    if (!widget.isIncoming) {
-      _initiateRealCall();
+    _isLocked = widget.isLocked;
+    
+    if (widget.isAnswered) {
+      _callStatus = '00:00'; // Or whatever active timer you have
     } else {
-      _checkDeviceLockState();
+      _callStatus = widget.isIncoming ? 'incoming call' : 'calling...';
+      if (!widget.isIncoming) {
+        _initiateRealCall();
+      }
     }
     _listenForCallEvents();
-  }
-
-  Future<void> _checkDeviceLockState() async {
-    try {
-      final locked = await platform.invokeMethod<bool>('isDeviceLocked');
-      if (mounted) {
-        setState(() {
-          _isLocked = locked ?? false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Could not check lock state: $e');
-    }
   }
 
   void _listenForCallEvents() {
@@ -67,6 +62,9 @@ class _CallScreenState extends State<CallScreen> {
         if (state == 7) { // 7 == STATE_DISCONNECTED
           if (mounted && Navigator.canPop(context)) {
             Navigator.pop(context);
+          }
+          if (widget.isLocked) {
+            SystemNavigator.pop();
           }
         }
       }
@@ -107,14 +105,17 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _endCall() async {
+    final isCallActive = _callStatus != 'incoming call' && _callStatus != 'calling...';
     try {
-      await platform.invokeMethod(widget.isIncoming ? 'rejectCall' : 'disconnectCall');
+      if (widget.isIncoming && !isCallActive) {
+        await platform.invokeMethod('rejectCall');
+      } else {
+        await platform.invokeMethod('disconnectCall');
+      }
     } catch (e) {
       debugPrint("Error ending: $e");
     }
-    if (mounted && Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
+    // We don't immediately pop here; we wait for the state == 7 event from native.
   }
 
   Widget _buildGlassButton({

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'call_screen.dart';
 
 class EditContactScreen extends StatefulWidget {
   final String displayName;
@@ -114,6 +115,29 @@ class _EditContactScreenState extends State<EditContactScreen> {
                       child: const Text("Add Photo", style: TextStyle(color: Colors.white, fontSize: 14)),
                     ),
                   ),
+                  if (_currentPhoto != null) ...[
+                    const SizedBox(height: 15),
+                    GestureDetector(
+                      onTap: () {
+                        // Open CallScreen in preview mode
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CallScreen(
+                              displayName: _firstNameController.text + " " + _lastNameController.text,
+                              number: _phoneController.text.isNotEmpty ? _phoneController.text : "Mobile",
+                              isIncoming: true,
+                              photoThumbnail: _currentPhoto,
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        "Preview Contact Poster",
+                        style: TextStyle(color: Colors.blueAccent, fontSize: 15),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

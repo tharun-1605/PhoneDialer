@@ -23,6 +23,24 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         var callEventSink: EventChannel.EventSink? = null
+        var isAppInForeground = false
+    }
+    
+    private var pendingAction: String? = null
+
+    override fun onResume() {
+        super.onResume()
+        isAppInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isAppInForeground = false
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,6 +55,32 @@ class MainActivity : FlutterActivity() {
                 android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val action = intent?.getStringExtra("action")
+        if (action == "answered") {
+            CallService.currentCall?.answer(0)
+            pendingAction = "answered"
+            sendPendingActionIfReady()
+        } else if (action == "full_screen") {
+            pendingAction = "full_screen"
+            sendPendingActionIfReady()
+        }
+    }
+
+    private fun sendPendingActionIfReady() {
+        if (pendingAction != null && callEventSink != null) {
+            CallService.currentCall?.let {
+                val number = it.details?.handle?.schemeSpecificPart ?: "Unknown"
+                val name = ContactUtils.getContactName(this, number) ?: number
+                val isIncoming = it.state == android.telecom.Call.STATE_RINGING
+                // If answered, the state might not be ringing anymore, but that's ok, CallScreen will handle it
+                callEventSink?.success(mapOf("number" to number, "name" to name, "isIncoming" to isIncoming, "state" to it.state, "forceFullScreen" to true))
+            }
+            pendingAction = null
+        }
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -46,11 +90,16 @@ class MainActivity : FlutterActivity() {
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     callEventSink = events
-                    // Check if there's already an active call
-                    CallService.currentCall?.let {
-                        val number = it.details?.handle?.schemeSpecificPart ?: "Unknown"
-                        val isIncoming = it.state == android.telecom.Call.STATE_RINGING
-                        callEventSink?.success(mapOf("number" to number, "isIncoming" to isIncoming))
+                    sendPendingActionIfReady()
+                    
+                    if (pendingAction == null) {
+                        // Check if there's already an active call
+                        CallService.currentCall?.let {
+                            val number = it.details?.handle?.schemeSpecificPart ?: "Unknown"
+                            val name = ContactUtils.getContactName(this@MainActivity, number) ?: number
+                            val isIncoming = it.state == android.telecom.Call.STATE_RINGING
+                            callEventSink?.success(mapOf("number" to number, "name" to name, "isIncoming" to isIncoming, "state" to it.state, "initial" to true))
+                        }
                     }
                 }
                 override fun onCancel(arguments: Any?) {
